@@ -1,6 +1,6 @@
 [[source]]
 url = 'https://pypi.python.org/simple'
-verify_ssl = true
+verify_ssl = false
 name = 'pypi'
 
 [requires]
@@ -12,3 +12,5 @@ pyspark = ">=3.0.0"
 pytest-cov = "*"
 numpy=">=1.18"
 pandas = "*"
+matplotlib=">=3.3.0"
+scikit-learn=">=0.23.2"
