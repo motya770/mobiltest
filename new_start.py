@@ -6,22 +6,24 @@ from pyspark.sql.functions import lit
 
 # function that picks a pair of random samples from the list of samples given (it also makes sure they do not have the same x)
 from pyspark.shell import sqlContext, spark
-from pyspark.sql.types import FloatType
+from pyspark.sql.types import FloatType, Row
+from operator import add
 
 
 def get_random_sample_pair(data_frame):
     dx = 0
-    selected_samples = []
-    while (dx == 0):
+    # selected_samples = []
+    # while (dx == 0):
         # keep going until we get a pair with dx != 0
-        selected_samples = []
-        for i in [0, 1]:
-            point = data_frame.sample(fraction=0.001).limit(1) #[index]['x']
+    selected_samples = []
+    for i in [0, 1]:
+        point = data_frame.sample(False, 0.1).limit(1)
 
             #y = data_frame.sample(False, 0.1, seed=0).limit(1)
-            selected_samples.append({'x':  point.collect()[0]["x"], 'y': point.collect()[0]["y"]})
+        rows = point.collect();
+        selected_samples.append({'x':  rows[0][1], 'y': rows[0][2]})
             # print("creator_samples ",i, " : ", creator_samples, " index ", index)
-        dx = selected_samples[0]['x'] - selected_samples[1]['y']
+        # dx = selected_samples[0]['x'] - selected_samples[1]['y']
 
     return selected_samples[0], selected_samples[1]
 
@@ -85,9 +87,111 @@ def scoreModelAgainstSamples(model, data_frame, cutoff_dist=20):
     return total_score
 
 
+def get_score_for_sample(i, rdd):
+    print("get_score_for_sample:")
+    firstPoint = rdd.takeSample(False, 1, seed=0)
+    secondPoint = rdd.takeSample(False, 1, seed=0)
+
+    print(rdd)
+
+
+def get_score(row, model, samples, models, cutoff_dist):
+    print("get score for row, model len: ")
+    print(len(models))
+    results = []
+
+    for i in range(1, len(models)):
+        m = models[i]
+        sample = samples[i]
+        pred_y = m['a'] * row['x'] + m['b']
+        score = min(abs(row['y'] - pred_y), cutoff_dist)
+        result = ((m['a'], m['b']), score)
+        results.append(result)
+        print(result)
+
+    return results
+
+def sum_score(row1, row2):
+
+    # print("sum score")
+    # print("r1:" + str(row1))
+    # print("r2:" + str(row2))
+    # print("r3:" + str(row1[1]))
+    return row1 + row2
+   # return (row1[0], row1[1] + row2[1])
+
+def to_list(a):
+    return [a]
+
+
+def append(a, b):
+    a.append(b)
+    return a
+
+
+def extend(a, b):
+    a.extend(b)
+    return a
+
+
+def comparator(a, b):
+     print("comparaor: ")
+     print("a: " + str(a))
+     print("b: " + str(b))
+
+     if a[1] < b[1]:
+         return a
+     else:
+         return b
+
+
+def extract_score(x):
+    print("extract_score: " + str(x))
+    return x[1], x[0]
+
+
 # the function that runs the ransac algorithm (serially)
 # gets as input the number of iterations to use and the cutoff_distance for the fit score
 def ransac(data_frame, iterations, cutoff_dist):
+
+    lst = np.random.randint(0, 10, 3)
+    a = spark.sparkContext.parallelize(lst)
+    print(a.glom().collect())
+    # print(a.map(lambda x: mult(x)).reduce(lambda x, y: summer(x, y)))
+
+    rdd = data_frame.rdd
+
+    models = []
+    samples = []
+
+    for i in range(1, iterations):
+        sample1, sample2 = get_random_sample_pair(data_frame)
+        model = modelFromSamplePair(sample1, sample2)
+        models.append(model)
+        sample = (sample1, sample2)
+        samples.append(sample)
+
+    result = rdd.flatMap(lambda row: get_score(row, model, samples, models, cutoff_dist))
+    reduced_result = result.reduceByKey(add)
+    minimal_score = reduced_result.map(extract_score).min()
+
+    print("result: ")
+    print(reduced_result)
+
+    print("minimal_score: ")
+    print(minimal_score)
+
+    # values = reduced_result.collect();
+    # min_value = 1000000
+    # for i in range(0, len(values)):
+    #     row = values[i]
+    #     print("row: " + str(row))
+    #     if min_value > row[1]:
+    #         min_value = row[1]
+
+    # print("minimal_value: ")
+    # print(min_value)
+
     # runs ransac algorithm for the given amount of iterations, where in each iteration it:
     # 1. randomly creates a model from the samples by calling m = modelFromSamplesFunc(samples)
     # 2. calculating the score of the model against the sample set
@@ -95,21 +199,28 @@ def ransac(data_frame, iterations, cutoff_dist):
     # after all iterations are done - returns the best model and score
 
     # data_frame.registerTempTable('x_y_table')
-
+    # rdd = data_frame.rdd;
+    # rdd_iter = spark.sparkContext\
+    #      .parallelize(range(0, iterations))
+    #
+    # rdd_iter.map(lambda i:
+    #              get_score_for_sample(i, rdd))\
+    #     .reduce(lambda x: print(x))
+    #
     min_m = {}
     min_score = -1
+    #
+    # data_frame = data_frame.repartition(10).cache()
+    # points = data_frame.sample(fraction=0.1).limit(2).collect();
+    # rdd = data_frame.rdd;
+    # p1 = points[0];
+    # p2 = points[1];
 
-    data_frame = data_frame.repartition(10).cache()
-    points = data_frame.sample(fraction=0.1).limit(2).collect();
-    rdd = data_frame.rdd;
-    p1 = points[0];
-    p2 = points[1];
+    # model = modelFromSamplePair(p1, p2);
 
-    model = modelFromSamplePair(p1, p2);
+    # def main_map(lamda row: print(row))
 
-    def main_map(lamda row: print(row))
-
-    rdd.map(main_map, model).reduce(lambda x: x)
+    # rdd.map(main_map, model).reduce(lambda x: x)
 
     # def reduced_func(x1, x2):
     #     print("inside reduce")
@@ -156,25 +267,35 @@ def ransac(data_frame, iterations, cutoff_dist):
     # print('output =', interim.reduce(lambda x, y: x + y))
     # return
 
+    # data_frame = data_frame.cache()
+
+    # rdd = data_frame.rdd;
+    # rdd.randomSplit()
+
+
+    # samples = data_frame.sample(False, 0.1, seed=0).limit(iterations * 2);
+    # samples
+
+
+
     # for i in range(1, iterations):
     #     if i % 10 == 0:
     #         print(i)
     #
     #     sample1, sample2 = get_random_sample_pair(data_frame)
-
-        # if i % 10 == 0:
-        #     print("Starting to get sample")
-
-        #
-        # if i % 10 == 0:
-        #     print("Finished to get sample")
-
-        # m = modelFromSamplePair(sample1, sample2)
-        # score = scoreModelAgainstSamples(m, data_frame, cutoff_dist)
-
-        # if (min_score < 0 or score < min_score):
-        #     min_score = score
-        #     min_m = m
+    #
+    #     if i % 10 == 0:
+    #         print("Starting to get sample")
+    #
+    #     if i % 10 == 0:
+    #         print("Finished to get sample")
+    #
+    #     m = modelFromSamplePair(sample1, sample2)
+    #     score = scoreModelAgainstSamples(m, data_frame, cutoff_dist)
+    #
+    #     if (min_score < 0 or score < min_score):
+    #         min_score = score
+    #         min_m = m
 
     return {'model': min_m, 'score': min_score}
 
@@ -188,13 +309,15 @@ def read_samples(filename):
     num_cores_to_use = 4  # depends on how many cores you have locally. try 2X or 4X the amount of HW threads
 
     # now we create a spark context in local mode (i.e - not on cluster)
-    conf = SparkConf().setMaster("local[{}]".format(num_cores_to_use),).setAppName("Mobileye")
+
+    conf = SparkConf().set("spark.default.parallelism", num_cores_to_use)\
+        .setMaster("local[{}]".format(num_cores_to_use),).setAppName("Mobileye")
     sc = SparkContext.getOrCreate(conf)
     from pyspark.sql import SparkSession
     session = SparkSession(sc)
 
     df = session.read.option("header", True) \
-        .csv(filename)
+        .csv(filename).repartition(10)
 
     from pyspark.sql.types import IntegerType
     df = df.withColumn("x", df["x"].cast(FloatType()))
@@ -301,7 +424,7 @@ if __name__ == '__main__':
     path_to_samples_csv = 'data/samples_for_line_a_27.0976088174_b_12.234.csv'
     data_frame = read_samples(path_to_samples_csv)
 
-    best_model = ransac(data_frame, iterations=1000, cutoff_dist=20)
+    best_model = ransac(data_frame, iterations=10, cutoff_dist=20)
 
     # now plot the model
     #plot_model_and_samples(best_model, samples)
