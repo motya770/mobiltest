@@ -198,11 +198,14 @@ def ransac(data_frame, iterations, cutoff_dist):
     reduced_result = result.reduceByKey(add)
     minimal_score = reduced_result.map(extract_score).min()
 
-    print("result: ")
+    print("\nresult: ")
     print(reduced_result)
 
-    print("minimal_score: ")
+    print("\nminimal_score: ")
     print(minimal_score)
+
+    min_m = {'a': minimal_score[1][0], 'b': minimal_score[1][1]}
+    min_score = minimal_score[0]
 
     # values = reduced_result.collect();
     # min_value = 1000000
@@ -230,8 +233,7 @@ def ransac(data_frame, iterations, cutoff_dist):
     #              get_score_for_sample(i, rdd))\
     #     .reduce(lambda x: print(x))
     #
-    min_m = {}
-    min_score = -1
+
     #
     # data_frame = data_frame.repartition(10).cache()
     # points = data_frame.sample(fraction=0.1).limit(2).collect();
@@ -437,6 +439,14 @@ def some_basic_pyspark_example():
     print(sum_of_squares)
 
 
+def read_samples_from_csv(filename):
+    # reads samples from a csv file and returns them as list of sample dictionaries (each sample is dictionary with 'x' and 'y' keys)
+
+    df = pd.read_csv(filename)
+    samples = df[['x', 'y']].to_dict(orient='records')
+    return samples
+
+
 # ========= main ==============
 
 if __name__ == '__main__':
@@ -447,7 +457,9 @@ if __name__ == '__main__':
     path_to_samples_csv = 'data/samples_for_line_a_27.0976088174_b_12.234.csv'
     data_frame = read_samples(path_to_samples_csv)
 
-    best_model = ransac(data_frame, iterations=5000, cutoff_dist=20)
+    best_model = ransac(data_frame, iterations=10, cutoff_dist=20)
+
+    samples = read_samples_from_csv(path_to_samples_csv)
 
     # now plot the model
-    #plot_model_and_samples(best_model, samples)
+    plot_model_and_samples(best_model, samples)
