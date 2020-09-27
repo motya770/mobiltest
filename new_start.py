@@ -1,3 +1,4 @@
+import random
 import numpy as np
 import pandas as pd
 from pyspark import SparkConf
@@ -10,20 +11,32 @@ from pyspark.sql.types import FloatType, Row
 from operator import add
 
 
-def get_random_sample_pair(data_frame):
-    dx = 0
-    # selected_samples = []
-    # while (dx == 0):
-        # keep going until we get a pair with dx != 0
-    selected_samples = []
-    for i in [0, 1]:
-        point = data_frame.sample(False, 0.1).limit(1)
+# def get_random_sample_pair(data_frame):
+#     dx = 0
+#     # selected_samples = []
+#     # while (dx == 0):
+#         # keep going until we get a pair with dx != 0
+#     selected_samples = []
+#     for i in [0, 1]:
+#         point = data_frame.sample(False, 0.1).limit(1)
+#         rows = point.collect();
+#         selected_samples.append({'x':  rows[0][1], 'y': rows[0][2]})
+#
+#     return selected_samples[0], selected_samples[1]
 
-            #y = data_frame.sample(False, 0.1, seed=0).limit(1)
-        rows = point.collect();
-        selected_samples.append({'x':  rows[0][1], 'y': rows[0][2]})
+def get_random_sample_pair(samples):
+    dx = 0
+    selected_samples = []
+    while (dx == 0):
+        # keep going until we get a pair with dx != 0
+        selected_samples = []
+        for i in [0, 1]:
+            index = random.randint(0, len(samples) - 1);
+            x = samples[index]['x']
+            y = samples[index]['y']
+            selected_samples.append({'x': x, 'y': y})
             # print("creator_samples ",i, " : ", creator_samples, " index ", index)
-        # dx = selected_samples[0]['x'] - selected_samples[1]['y']
+        dx = selected_samples[0]['x'] - selected_samples[1]['x']
 
     return selected_samples[0], selected_samples[1]
 
@@ -165,13 +178,22 @@ def ransac(data_frame, iterations, cutoff_dist):
     models = []
     samples = []
 
-    for i in range(1, iterations):
-        sample1, sample2 = get_random_sample_pair(data_frame)
+    # for i in range(1, iterations):
+    #     sample1, sample2 = get_random_sample_pair(data_frame)
+    #     model = modelFromSamplePair(sample1, sample2)
+    #     models.append(model)
+    #     sample = (sample1, sample2)
+    #     samples.append(sample)
+
+    random_rows = data_frame.sample(False, 0.1).limit(iterations * 2).collect()
+    for i in range(0, iterations):
+        sample1, sample2 = get_random_sample_pair(random_rows)
         model = modelFromSamplePair(sample1, sample2)
         models.append(model)
         sample = (sample1, sample2)
         samples.append(sample)
 
+    # rdd = rdd.cache()
     result = rdd.flatMap(lambda row: get_score(row, samples, models, cutoff_dist))
     reduced_result = result.reduceByKey(add)
     minimal_score = reduced_result.map(extract_score).min()
@@ -425,7 +447,7 @@ if __name__ == '__main__':
     path_to_samples_csv = 'data/samples_for_line_a_27.0976088174_b_12.234.csv'
     data_frame = read_samples(path_to_samples_csv)
 
-    best_model = ransac(data_frame, iterations=10, cutoff_dist=20)
+    best_model = ransac(data_frame, iterations=5000, cutoff_dist=20)
 
     # now plot the model
     #plot_model_and_samples(best_model, samples)
