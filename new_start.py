@@ -108,14 +108,13 @@ def get_score_for_sample(i, rdd):
     print(rdd)
 
 
-def get_score(row, samples, models, cutoff_dist):
+def get_score(row, models, cutoff_dist):
     # print("get score for row, model len: ")
     # print(len(models))
     results = []
 
-    for i in range(1, len(models)):
+    for i in range(0, len(models)):
         m = models[i]
-        sample = samples[i]
         pred_y = m['a'] * row['x'] + m['b']
         score = min(abs(row['y'] - pred_y), cutoff_dist)
         result = ((m['a'], m['b']), score)
@@ -160,17 +159,27 @@ def comparator(a, b):
 
 
 def extract_score(x):
-    print("extract_score: " + str(x))
+    # print("extract_score: " + str(x))
     return x[1], x[0]
 
+
+def elo_acc(acc,nxt):
+    value = acc.get(nxt[0], 0)
+    value = value + nxt[1]
+    acc[nxt[0]] = value
+    return acc
+
+def elo_comb(a,b):
+    a.update(b)
+    return a
 
 # the function that runs the ransac algorithm (serially)
 # gets as input the number of iterations to use and the cutoff_distance for the fit score
 def ransac(data_frame, iterations, cutoff_dist):
 
-    lst = np.random.randint(0, 10, 3)
-    a = spark.sparkContext.parallelize(lst)
-    print(a.glom().collect())
+    # lst = np.random.randint(0, 10, 3)
+    # a = spark.sparkContext.parallelize(lst)
+    # print(a.glom().collect())
     # print(a.map(lambda x: mult(x)).reduce(lambda x, y: summer(x, y)))
 
     rdd = data_frame.rdd
@@ -185,6 +194,7 @@ def ransac(data_frame, iterations, cutoff_dist):
     #     sample = (sample1, sample2)
     #     samples.append(sample)
 
+    print("start of ransac")
     random_rows = data_frame.sample(False, 0.1).limit(iterations * 2).collect()
     for i in range(0, iterations):
         sample1, sample2 = get_random_sample_pair(random_rows)
@@ -193,9 +203,13 @@ def ransac(data_frame, iterations, cutoff_dist):
         sample = (sample1, sample2)
         samples.append(sample)
 
-    # rdd = rdd.cache()
-    result = rdd.flatMap(lambda row: get_score(row, samples, models, cutoff_dist))
+    print("collected random samples")
+
+    result = rdd.flatMap(lambda row: get_score(row, models, cutoff_dist))
     reduced_result = result.reduceByKey(add)
+
+    print(reduced_result.toDebugString())
+
     minimal_score = reduced_result.map(extract_score).min()
 
     print("\nresult: ")
@@ -331,18 +345,18 @@ def ransac(data_frame, iterations, cutoff_dist):
 def read_samples(filename):
     # reads samples from a csv file and returns them as list of sample dictionaries (each sample is dictionary with 'x' and 'y' keys)
     from pyspark import SparkContext
-    num_cores_to_use = 4  # depends on how many cores you have locally. try 2X or 4X the amount of HW threads
+    num_cores_to_use = 16  # depends on how many cores you have locally. try 2X or 4X the amount of HW threads
 
     # now we create a spark context in local mode (i.e - not on cluster)
 
-    conf = SparkConf().set("spark.default.parallelism", num_cores_to_use)\
+    conf = SparkConf().set("spark.ui.showConsoleProgress", "true").set("spark.default.parallelism", num_cores_to_use)\
         .setMaster("local[{}]".format(num_cores_to_use),).setAppName("Mobileye")
     sc = SparkContext.getOrCreate(conf)
     from pyspark.sql import SparkSession
     session = SparkSession(sc)
 
     df = session.read.option("header", True) \
-        .csv(filename).repartition(10)
+        .csv(filename).repartition(20)
 
     from pyspark.sql.types import IntegerType
     df = df.withColumn("x", df["x"].cast(FloatType()))
@@ -457,7 +471,7 @@ if __name__ == '__main__':
     path_to_samples_csv = 'data/samples_for_line_a_27.0976088174_b_12.234.csv'
     data_frame = read_samples(path_to_samples_csv)
 
-    best_model = ransac(data_frame, iterations=5000, cutoff_dist=20)
+    best_model = ransac(data_frame, iterations=10, cutoff_dist=20)
 
     samples = read_samples_from_csv(path_to_samples_csv)
 
