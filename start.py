@@ -192,7 +192,8 @@ if __name__ == '__main__':
     #import matplotlib.pyplot as plt
     #plt.figure()
 
-    path_to_samples_csv = 'data/samples_for_line_a_27.0976088174_b_12.234.csv'
+
+    path_to_samples_csv = 'data/samples_for_line_a_9.013049486253855_b_1.csv'
     samples = read_samples(path_to_samples_csv)
     best_model = ransac(samples, iterations=5000, cutoff_dist=20)
 

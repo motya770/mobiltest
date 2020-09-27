@@ -112,9 +112,9 @@ def get_score(row, models, cutoff_dist):
     # print("get score for row, model len: ")
     # print(len(models))
     results = []
-
-    for i in range(0, len(models)):
-        m = models[i]
+    models_values = models.value
+    for i in range(0, len(models_values)):
+        m = models_values[i]
         pred_y = m['a'] * row['x'] + m['b']
         score = min(abs(row['y'] - pred_y), cutoff_dist)
         result = ((m['a'], m['b']), score)
@@ -123,11 +123,13 @@ def get_score(row, models, cutoff_dist):
 
     return results
 
-def get_score_joined(row, data_values, cutoff_dist):
+def get_score_fast(row, data_values, cutoff_dist):
     # print("get score for row, model len: ")
     # print(len(models))
     total_score = 0
-
+    # print("running in p: " + str(len(data_values)))
+    # values = data_values.value
+    # cutoff_dist = cutoff_dist.value
     for i in range(0, len(data_values)):
         m = row
         data_point = data_values[i]
@@ -222,12 +224,18 @@ def ransac_fast(data_frame, iterations, cutoff_dist):
 
     print("collected random samples")
     models_rdd = spark.sparkContext.parallelize(models)
+
     print("models to rdd")
 
     data_values = data_frame.collect();
 
     print("starting map")
-    result = models_rdd.map(lambda row: get_score_joined(row, data_values, cutoff_dist))
+
+    # data_values = spark.sparkContext.broadcast(data_values)
+    # cutoff_dist = spark.sparkContext.broadcast(cutoff_dist)
+
+    print("starting to work...")
+    result = models_rdd.map(lambda row: get_score_fast(row, data_values, cutoff_dist))
     reduced_result = result.reduce(min)
 
     minimal_score = reduced_result[1]
@@ -239,6 +247,53 @@ def ransac_fast(data_frame, iterations, cutoff_dist):
     min_score = reduced_result[0]
 
     return {'model': min_m, 'score': min_score}
+
+def get_score_joined(row, cutoff_dist):
+    # print("get score for row, model len: ")
+    # print(len(models))
+    # print("inside joined: " + str(row))
+    #
+    m = row[0]
+    data_point = row[1]
+    pred_y = m['a'] * data_point['x'] + m['b']
+    score = min(abs(data_point['y'] - pred_y), cutoff_dist)
+    # print("score " + str(score))
+    return (m['a'], m['b']), score
+
+
+def ransac_joined(data_frame, iterations, cutoff_dist):
+
+    rdd = data_frame.rdd
+
+    models = []
+    samples = []
+
+    print("start of ransac")
+    random_rows = data_frame.sample(False, 0.1).limit(iterations * 2).collect()
+    for i in range(0, iterations):
+        sample1, sample2 = get_random_sample_pair(random_rows)
+        model = modelFromSamplePair(sample1, sample2)
+        sample = (sample1, sample2)
+        models.append(model)
+        samples.append(sample)
+
+    print("collected random samples")
+    models_rdd = spark.sparkContext.parallelize(models)
+
+    print("models to rdd")
+
+    rdd_joined = models_rdd.cartesian(data_frame.rdd)
+
+    print("starting map")
+    result = rdd_joined.map(lambda row: get_score_joined(row, cutoff_dist))
+    reduced_result = result.reduceByKey(add)\
+        .map(extract_score).reduce(min)
+
+    print("\nresult: ")
+    print(reduced_result)
+
+    return {'model': 0, 'score': 0}
+
 
 
 # the function that runs the ransac algorithm (serially)
@@ -260,9 +315,10 @@ def ransac_slow(data_frame, iterations, cutoff_dist):
         samples.append(sample)
 
     print("collected random samples")
+    models = spark.sparkContext.broadcast(models)
 
     result = rdd.flatMap(lambda row: get_score(row, models, cutoff_dist))
-    reduced_result = result.reduceByKey(add)
+    reduced_result = result.persist().reduceByKey(add)
 
     print(reduced_result.toDebugString())
 
@@ -286,7 +342,7 @@ def ransac_slow(data_frame, iterations, cutoff_dist):
 def read_samples(filename):
     # reads samples from a csv file and returns them as list of sample dictionaries (each sample is dictionary with 'x' and 'y' keys)
     from pyspark import SparkContext
-    num_cores_to_use = 16  # depends on how many cores you have locally. try 2X or 4X the amount of HW threads
+    num_cores_to_use = 4  # depends on how many cores you have locally. try 2X or 4X the amount of HW threads
 
     # now we create a spark context in local mode (i.e - not on cluster)
 
@@ -297,7 +353,7 @@ def read_samples(filename):
     session = SparkSession(sc)
 
     df = session.read.option("header", True) \
-        .csv(filename).repartition(20)
+        .csv(filename).repartition(num_cores_to_use * 4)
 
     from pyspark.sql.types import IntegerType
     df = df.withColumn("x", df["x"].cast(FloatType()))
