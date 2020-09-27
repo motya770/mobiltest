@@ -80,6 +80,8 @@ def ransac(samples, iterations, cutoff_dist):
             min_score = score
             min_m = m
 
+    print("min_m" + str(min_m))
+    print("min_score: " + str(min_score))
     return {'model': min_m, 'score': min_score}
 
 

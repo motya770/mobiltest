@@ -457,7 +457,7 @@ if __name__ == '__main__':
     path_to_samples_csv = 'data/samples_for_line_a_27.0976088174_b_12.234.csv'
     data_frame = read_samples(path_to_samples_csv)
 
-    best_model = ransac(data_frame, iterations=10, cutoff_dist=20)
+    best_model = ransac(data_frame, iterations=5000, cutoff_dist=20)
 
     samples = read_samples_from_csv(path_to_samples_csv)
 
