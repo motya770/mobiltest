@@ -95,9 +95,9 @@ def get_score_for_sample(i, rdd):
     print(rdd)
 
 
-def get_score(row, model, samples, models, cutoff_dist):
-    print("get score for row, model len: ")
-    print(len(models))
+def get_score(row, samples, models, cutoff_dist):
+    # print("get score for row, model len: ")
+    # print(len(models))
     results = []
 
     for i in range(1, len(models)):
@@ -107,9 +107,10 @@ def get_score(row, model, samples, models, cutoff_dist):
         score = min(abs(row['y'] - pred_y), cutoff_dist)
         result = ((m['a'], m['b']), score)
         results.append(result)
-        print(result)
+        # print(result)
 
     return results
+
 
 def sum_score(row1, row2):
 
@@ -171,7 +172,7 @@ def ransac(data_frame, iterations, cutoff_dist):
         sample = (sample1, sample2)
         samples.append(sample)
 
-    result = rdd.flatMap(lambda row: get_score(row, model, samples, models, cutoff_dist))
+    result = rdd.flatMap(lambda row: get_score(row, samples, models, cutoff_dist))
     reduced_result = result.reduceByKey(add)
     minimal_score = reduced_result.map(extract_score).min()
 
