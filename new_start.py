@@ -127,14 +127,15 @@ def get_score_fast(row, data_values, cutoff_dist):
     # print("get score for row, model len: ")
     # print(len(models))
     total_score = 0
+
     # print("running in p: " + str(len(data_values)))
-    # values = data_values.value
-    # cutoff_dist = cutoff_dist.value
-    for i in range(0, len(data_values)):
+    values = data_values.value
+    cutoff_dist_value = cutoff_dist.value
+    for i in range(0, len(values)):
         m = row
-        data_point = data_values[i]
+        data_point = values[i]
         pred_y = m['a'] * data_point['x'] + m['b']
-        score = min(abs(data_point['y'] - pred_y), cutoff_dist)
+        score = min(abs(data_point['y'] - pred_y), cutoff_dist_value)
         total_score += score
 
     return total_score, row
@@ -224,6 +225,7 @@ def ransac_fast(data_frame, iterations, cutoff_dist):
 
     print("collected random samples")
     models_rdd = spark.sparkContext.parallelize(models)
+    models_rdd = models_rdd.cache()
 
     print("models to rdd")
 
@@ -231,8 +233,8 @@ def ransac_fast(data_frame, iterations, cutoff_dist):
 
     print("starting map")
 
-    # data_values = spark.sparkContext.broadcast(data_values)
-    # cutoff_dist = spark.sparkContext.broadcast(cutoff_dist)
+    data_values = spark.sparkContext.broadcast(data_values)
+    cutoff_dist = spark.sparkContext.broadcast(cutoff_dist)
 
     print("starting to work...")
     result = models_rdd.map(lambda row: get_score_fast(row, data_values, cutoff_dist))
